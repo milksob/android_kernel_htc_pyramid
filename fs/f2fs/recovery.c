@@ -220,6 +220,7 @@ static int check_index_in_prev_nodes(struct f2fs_sb_info *sbi,
 	struct seg_entry *sentry;
 	unsigned int segno = GET_SEGNO(sbi, blkaddr);
 	unsigned short blkoff = GET_BLKOFF_FROM_SEG0(sbi, blkaddr);
+	struct f2fs_summary_block *sum_node;
 	struct f2fs_summary sum;
 	struct page *sum_page, *node_page;
 	nid_t ino, nid;
