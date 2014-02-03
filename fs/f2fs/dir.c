@@ -512,8 +512,6 @@ add_dentry:
 
 	update_parent_metadata(dir, inode, current_depth);
 fail:
-	up_write(&F2FS_I(inode)->i_sem);
-
 	if (is_inode_flag_set(F2FS_I(dir), FI_UPDATE_DIR)) {
 		update_inode_page(dir);
 		clear_inode_flag(F2FS_I(dir), FI_UPDATE_DIR);
