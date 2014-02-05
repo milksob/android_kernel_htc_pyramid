@@ -157,8 +157,6 @@ static int f2fs_write_meta_page(struct page *page,
 	struct inode *inode = page->mapping->host;
 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
 
-	trace_f2fs_writepage(page, META);
-
 	if (unlikely(sbi->por_doing))
 		goto redirty_out;
 	if (wbc->for_reclaim)
@@ -168,7 +166,7 @@ static int f2fs_write_meta_page(struct page *page,
 	if (unlikely(is_set_ckpt_flags(F2FS_CKPT(sbi), CP_ERROR_FLAG)))
 		goto no_write;
 
-	f2fs_wait_on_page_writeback(page, META);
+	wait_on_page_writeback(page);
 	write_meta_page(sbi, page);
 no_write:
 	dec_page_count(sbi, F2FS_DIRTY_META);
