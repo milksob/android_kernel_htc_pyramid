@@ -556,8 +556,6 @@ void f2fs_delete_entry(struct f2fs_dir_entry *dentry, struct page *page,
 	if (inode) {
 		struct f2fs_sb_info *sbi = F2FS_SB(dir->i_sb);
 
-		down_write(&F2FS_I(inode)->i_sem);
-
 		if (S_ISDIR(inode->i_mode)) {
 			drop_nlink(dir);
 			update_inode_page(dir);
