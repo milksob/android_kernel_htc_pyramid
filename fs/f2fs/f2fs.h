@@ -89,13 +89,12 @@ enum {
 };
 
 /*
- * For CP/NAT/SIT/SSA readahead
+ * For CP/NAT/SIT readahead
  */
 enum {
 	META_CP,
 	META_NAT,
-	META_SIT,
-	META_SSA
+	META_SIT
 };
 
 /* for the list of orphan inodes */

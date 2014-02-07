@@ -73,14 +73,13 @@ out:
 	return page;
 }
 
-static inline int get_max_meta_blks(struct f2fs_sb_info *sbi, int type)
+inline int get_max_meta_blks(struct f2fs_sb_info *sbi, int type)
 {
 	switch (type) {
 	case META_NAT:
 		return NM_I(sbi)->max_nid / NAT_ENTRY_PER_BLOCK;
 	case META_SIT:
 		return SIT_BLK_CNT(sbi);
-	case META_SSA:
 	case META_CP:
 		return 0;
 	default:
@@ -89,7 +88,7 @@ static inline int get_max_meta_blks(struct f2fs_sb_info *sbi, int type)
 }
 
 /*
- * Readahead CP/NAT/SIT/SSA pages
+ * Readahead CP/NAT/SIT pages
  */
 int ra_meta_pages(struct f2fs_sb_info *sbi, int start, int nrpages, int type)
 {
@@ -124,9 +123,8 @@ int ra_meta_pages(struct f2fs_sb_info *sbi, int start, int nrpages, int type)
 				goto out;
 			prev_blk_addr = blk_addr;
 			break;
-		case META_SSA:
 		case META_CP:
-			/* get ssa/cp block addr */
+			/* get cp block addr */
 			blk_addr = blkno;
 			break;
 		default:
