@@ -38,7 +38,11 @@ static int f2fs_vm_page_mkwrite(struct vm_area_struct *vma,
 
 	f2fs_balance_fs(sbi);
 
-	sb_start_pagefault(inode->i_sb);
+	/* Wait if fs is frozen. This is racy so we check again later on
+	 * and retry if the fs has been frozen after the page lock has
+	 * been acquired
+	 */
+	vfs_check_frozen(inode->i_sb, SB_FREEZE_WRITE);
 
 	/* block allocation */
 	f2fs_lock_op(sbi);
@@ -78,14 +82,12 @@ mapped:
 	/* fill the page */
 	f2fs_wait_on_page_writeback(page, DATA);
 out:
-	sb_end_pagefault(inode->i_sb);
 	return block_page_mkwrite_return(err);
 }
 
 static const struct vm_operations_struct f2fs_file_vm_ops = {
-	.fault		= filemap_fault,
-	.page_mkwrite	= f2fs_vm_page_mkwrite,
-	.remap_pages	= generic_file_remap_pages,
+	.fault        = filemap_fault,
+	.page_mkwrite = f2fs_vm_page_mkwrite,
 };
 
 static int get_parent_ino(struct inode *inode, nid_t *pino)
@@ -312,13 +314,20 @@ done:
 
 void f2fs_truncate(struct inode *inode)
 {
+	int err;
+
 	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
 				S_ISLNK(inode->i_mode)))
 		return;
 
 	trace_f2fs_truncate(inode);
 
-	if (!truncate_blocks(inode, i_size_read(inode))) {
+	err = truncate_blocks(inode, i_size_read(inode));
+	if (err) {
+		f2fs_msg(inode->i_sb, KERN_ERR, "truncate failed with %d",
+				err);
+		f2fs_handle_error(F2FS_SB(inode->i_sb));
+	} else {
 		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
 		mark_inode_dirty(inode);
 	}
@@ -368,11 +377,17 @@ int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
 {
 	struct inode *inode = dentry->d_inode;
 	struct f2fs_inode_info *fi = F2FS_I(inode);
+	struct f2fs_inode_info *pfi = F2FS_I(dentry->d_parent->d_inode);
+	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
 	int err;
 
 	err = inode_change_ok(inode, attr);
 	if (err)
 		return err;
+
+	if (IS_ANDROID_EMU(sbi, fi, pfi))
+		f2fs_android_emu(sbi, inode, &attr->ia_uid, &attr->ia_gid,
+				 &attr->ia_mode);
 
 	if ((attr->ia_valid & ATTR_SIZE) &&
 			attr->ia_size != i_size_read(inode)) {

@@ -810,8 +810,7 @@ static int f2fs_write_data_page(struct page *page,
 	 * this page does not have to be written to disk.
 	 */
 	offset = i_size & (PAGE_CACHE_SIZE - 1);
-	if ((page->index >= end_index + 1) || !offset) {
-		inode_dec_dirty_dents(inode);
+	if ((page->index >= end_index + 1) || !offset)
 		goto out;
 
 	zero_user_segment(page, offset, PAGE_CACHE_SIZE);
@@ -821,7 +820,6 @@ write:
 
 	/* Dentry blocks are controlled by checkpoint */
 	if (S_ISDIR(inode->i_mode)) {
-		inode_dec_dirty_dents(inode);
 		err = do_write_data_page(page, &fio);
 		goto done;
 	}
@@ -1048,26 +1046,6 @@ static int check_direct_IO(struct inode *inode, int rw,
 			return -EINVAL;
 #endif
 	return 0;
-}
-
-static int f2fs_write_end(struct file *file,
-			struct address_space *mapping,
-			loff_t pos, unsigned len, unsigned copied,
-			struct page *page, void *fsdata)
-{
-	struct inode *inode = page->mapping->host;
-
-	SetPageUptodate(page);
-	set_page_dirty(page);
-
-	if (pos + copied > i_size_read(inode)) {
-		i_size_write(inode, pos + copied);
-		mark_inode_dirty(inode);
-		update_inode_page(inode);
-	}
-
-	f2fs_put_page(page, 1);
-	return copied;
 }
 
 static ssize_t f2fs_direct_IO(int rw, struct kiocb *iocb,

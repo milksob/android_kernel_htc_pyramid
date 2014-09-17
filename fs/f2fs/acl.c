@@ -82,22 +82,13 @@ static struct posix_acl *f2fs_acl_from_disk(const char *value, size_t size)
 		case ACL_GROUP_OBJ:
 		case ACL_MASK:
 		case ACL_OTHER:
-			acl->a_entries[i].e_id = ACL_UNDEFINED_ID;
 			entry = (struct f2fs_acl_entry *)((char *)entry +
 					sizeof(struct f2fs_acl_entry_short));
 			break;
 
 		case ACL_USER:
-			acl->a_entries[i].e_uid =
-				make_kuid(&init_user_ns,
-						le32_to_cpu(entry->e_id));
-			entry = (struct f2fs_acl_entry *)((char *)entry +
-					sizeof(struct f2fs_acl_entry));
-			break;
 		case ACL_GROUP:
-			acl->a_entries[i].e_gid =
-				make_kgid(&init_user_ns,
-						le32_to_cpu(entry->e_id));
+			acl->a_entries[i].e_id = le32_to_cpu(entry->e_id);
 			entry = (struct f2fs_acl_entry *)((char *)entry +
 					sizeof(struct f2fs_acl_entry));
 			break;
@@ -134,16 +125,8 @@ static void *f2fs_acl_to_disk(const struct posix_acl *acl, size_t *size)
 
 		switch (acl->a_entries[i].e_tag) {
 		case ACL_USER:
-			entry->e_id = cpu_to_le32(
-					from_kuid(&init_user_ns,
-						acl->a_entries[i].e_uid));
-			entry = (struct f2fs_acl_entry *)((char *)entry +
-					sizeof(struct f2fs_acl_entry));
-			break;
 		case ACL_GROUP:
-			entry->e_id = cpu_to_le32(
-					from_kgid(&init_user_ns,
-						acl->a_entries[i].e_gid));
+			entry->e_id = cpu_to_le32(acl->a_entries[i].e_id);
 			entry = (struct f2fs_acl_entry *)((char *)entry +
 					sizeof(struct f2fs_acl_entry));
 			break;
@@ -274,7 +257,8 @@ int f2fs_init_acl(struct inode *inode, struct inode *dir, struct page *ipage)
 			if (IS_ERR(acl))
 				return PTR_ERR(acl);
 		}
-		if (!acl)
+		if (!acl && !(test_opt(sbi, ANDROID_EMU) &&
+				F2FS_I(inode)->i_advise & FADVISE_ANDROID_EMU))
 			inode->i_mode &= ~current_umask();
 	}
 
@@ -321,6 +305,32 @@ int f2fs_acl_chmod(struct inode *inode)
 	return error;
 }
 
+int f2fs_android_emu(struct f2fs_sb_info *sbi, struct inode *inode,
+		u32 *uid, u32 *gid, umode_t *mode)
+{
+	F2FS_I(inode)->i_advise |= FADVISE_ANDROID_EMU;
+
+	if (uid)
+		*uid = sbi->android_emu_uid;
+	if (gid)
+		*gid = sbi->android_emu_gid;
+	if (mode) {
+		*mode = (*mode & ~S_IRWXUGO) | sbi->android_emu_mode;
+		if (F2FS_I(inode)->i_advise & FADVISE_ANDROID_EMU_ROOT)
+			*mode &= ~S_IRWXO;
+		if (S_ISDIR(*mode)) {
+			if (*mode & S_IRUSR)
+				*mode |= S_IXUSR;
+			if (*mode & S_IRGRP)
+				*mode |= S_IXGRP;
+			if (*mode & S_IROTH)
+				*mode |= S_IXOTH;
+		}
+	}
+
+	return 0;
+}
+
 static size_t f2fs_xattr_list_acl(struct dentry *dentry, char *list,
 		size_t list_size, const char *name, size_t name_len, int type)
 {
@@ -357,7 +367,7 @@ static int f2fs_xattr_get_acl(struct dentry *dentry, const char *name,
 		return PTR_ERR(acl);
 	if (!acl)
 		return -ENODATA;
-	error = posix_acl_to_xattr(&init_user_ns, acl, buffer, size);
+	error = posix_acl_to_xattr(acl, buffer, size);
 	posix_acl_release(acl);
 
 	return error;
@@ -379,7 +389,7 @@ static int f2fs_xattr_set_acl(struct dentry *dentry, const char *name,
 		return -EPERM;
 
 	if (value) {
-		acl = posix_acl_from_xattr(&init_user_ns, value, size);
+		acl = posix_acl_from_xattr(value, size);
 		if (IS_ERR(acl))
 			return PTR_ERR(acl);
 		if (acl) {

@@ -73,13 +73,14 @@ out:
 	return page;
 }
 
-inline int get_max_meta_blks(struct f2fs_sb_info *sbi, int type)
+static inline int get_max_meta_blks(struct f2fs_sb_info *sbi, int type)
 {
 	switch (type) {
 	case META_NAT:
 		return NM_I(sbi)->max_nid / NAT_ENTRY_PER_BLOCK;
 	case META_SIT:
 		return SIT_BLK_CNT(sbi);
+	case META_SSA:
 	case META_CP:
 		return 0;
 	default:
@@ -88,7 +89,7 @@ inline int get_max_meta_blks(struct f2fs_sb_info *sbi, int type)
 }
 
 /*
- * Readahead CP/NAT/SIT pages
+ * Readahead CP/NAT/SIT/SSA pages
  */
 int ra_meta_pages(struct f2fs_sb_info *sbi, int start, int nrpages, int type)
 {
@@ -123,8 +124,9 @@ int ra_meta_pages(struct f2fs_sb_info *sbi, int start, int nrpages, int type)
 				goto out;
 			prev_blk_addr = blk_addr;
 			break;
+		case META_SSA:
 		case META_CP:
-			/* get cp block addr */
+			/* get ssa/cp block addr */
 			blk_addr = blkno;
 			break;
 		default:
@@ -155,6 +157,8 @@ static int f2fs_write_meta_page(struct page *page,
 	struct inode *inode = page->mapping->host;
 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
 
+	trace_f2fs_writepage(page, META);
+
 	if (unlikely(sbi->por_doing))
 		goto redirty_out;
 	if (wbc->for_reclaim)
@@ -164,7 +168,7 @@ static int f2fs_write_meta_page(struct page *page,
 	if (unlikely(is_set_ckpt_flags(F2FS_CKPT(sbi), CP_ERROR_FLAG)))
 		goto no_write;
 
-	wait_on_page_writeback(page);
+	f2fs_wait_on_page_writeback(page, META);
 	write_meta_page(sbi, page);
 no_write:
 	dec_page_count(sbi, F2FS_DIRTY_META);
@@ -298,8 +302,12 @@ int acquire_orphan_inode(struct f2fs_sb_info *sbi)
 void release_orphan_inode(struct f2fs_sb_info *sbi)
 {
 	spin_lock(&sbi->orphan_inode_lock);
-	f2fs_bug_on(sbi->n_orphans == 0);
-	sbi->n_orphans--;
+	if (sbi->n_orphans == 0) {
+		f2fs_msg(sbi->sb, KERN_ERR, "releasing "
+			"unacquired orphan inode");
+		f2fs_handle_error(sbi);
+	} else
+		sbi->n_orphans--;
 	spin_unlock(&sbi->orphan_inode_lock);
 }
 
@@ -345,8 +353,13 @@ void remove_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
 		if (orphan->ino == ino) {
 			list_del(&orphan->list);
 			kmem_cache_free(orphan_entry_slab, orphan);
-			f2fs_bug_on(sbi->n_orphans == 0);
-			sbi->n_orphans--;
+			if (sbi->n_orphans == 0) {
+				f2fs_msg(sbi->sb, KERN_ERR, "removing "
+						"unacquired orphan inode %d",
+						ino);
+				f2fs_handle_error(sbi);
+			} else
+				sbi->n_orphans--;
 			break;
 		}
 	}
@@ -356,7 +369,12 @@ void remove_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
 static void recover_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
 {
 	struct inode *inode = f2fs_iget(sbi->sb, ino);
-	f2fs_bug_on(IS_ERR(inode));
+	if (IS_ERR(inode)) {
+		f2fs_msg(sbi->sb, KERN_ERR, "unable to recover orphan inode %d",
+				ino);
+		f2fs_handle_error(sbi);
+		return;
+	}
 	clear_nlink(inode);
 
 	/* truncate all the data during iput */
