@@ -36,6 +36,7 @@
 #include <linux/spi/spi.h>
 #include <linux/input/tdisc_shinetsu.h>
 #include <linux/i2c/isa1200.h>
+#include <linux/dma-contiguous.h>
 #include <linux/dma-mapping.h>
 #include <linux/i2c/bq27520.h>
 #include <linux/atmel_qt602240.h>
@@ -1623,6 +1624,19 @@ static struct ion_co_heap_pdata co_ion_pdata = {
 	.align = PAGE_SIZE,
 };
 
+#ifdef CONFIG_CMA
+	static u64 msm_dmamask = DMA_BIT_MASK(32);
+
+static struct platform_device ion_cma_heap_device = {
+	.name = "ion-cma-heap-device",
+	.id = -1,
+	.dev = {
+	.dma_mask = &msm_dmamask,
+	.coherent_dma_mask = DMA_BIT_MASK(32),
+	}
+};
+#endif
+
 /**
  * These heaps are listed in the order they will be allocated. Due to
  * video hardware restrictions and content protection the FW heap has to
@@ -1667,23 +1681,37 @@ struct ion_platform_heap msm8x60_heaps [] = {
 			.memory_type = ION_SMI_TYPE,
 			.extra_data = &cp_mfc_ion_pdata,
 		},
+#ifdef CONFIG_CMA
 		{
 			.id	= ION_SF_HEAP_ID,
-			.type	= ION_HEAP_TYPE_CARVEOUT,
+			.type	= ION_HEAP_TYPE_DMA,
 			.name	= ION_SF_HEAP_NAME,
 			.size	= MSM_ION_SF_SIZE,
 			.base	= MSM_ION_SF_BASE,
 			.memory_type = ION_EBI_TYPE,
 			.extra_data = &co_sf_ion_pdata,
+			.priv   = (void *)&ion_cma_heap_device.dev,
 		},
-		{
-			.id	= ION_AUDIO_HEAP_ID,
-			.type	= ION_HEAP_TYPE_CARVEOUT,
-			.name	= ION_AUDIO_HEAP_NAME,
-			.size	= MSM_ION_AUDIO_SIZE,
-			.memory_type = ION_EBI_TYPE,
-			.extra_data = &co_ion_pdata,
-		},
+#else
+                {
+                        .id     = ION_SF_HEAP_ID,
+                        .type   = ION_HEAP_TYPE_CARVEOUT,
+                        .name   = ION_SF_HEAP_NAME,
+                        .size   = MSM_ION_SF_SIZE,
+                        .base   = MSM_ION_SF_BASE,
+                        .memory_type = ION_EBI_TYPE,
+                        .extra_data = &co_sf_ion_pdata,
+                },
+#endif
+                {
+                        .id     = ION_AUDIO_HEAP_ID,
+                        .type   = ION_HEAP_TYPE_CARVEOUT,
+                        .name   = ION_AUDIO_HEAP_NAME,
+                        .size   = MSM_ION_AUDIO_SIZE,
+                        .memory_type = ION_EBI_TYPE,
+                        .extra_data = &co_ion_pdata,
+                },
+
 };
 
 static struct ion_platform_data ion_pdata = {
@@ -1817,11 +1845,17 @@ static struct memtype_reserve msm8x60_reserve_table[] __initdata = {
 static void __init reserve_ion_memory(void)
 {
 #ifdef CONFIG_ION_MSM
-	unsigned int i;
-	int ret;
+#ifdef CONFIG_CMA
+	msm8x60_reserve_table[MEMTYPE_SMI].size += MSM_ION_MM_FW_SIZE;
+	msm8x60_reserve_table[MEMTYPE_SMI].size += MSM_ION_MFC_SIZE;
+	msm8x60_reserve_table[MEMTYPE_SMI].size += MSM_ION_MM_SIZE;
+	msm8x60_reserve_table[MEMTYPE_EBI1].size += MSM_ION_AUDIO_SIZE;
 
-	ret = memblock_remove(MSM_ION_SF_BASE, MSM_ION_SF_SIZE);
-	BUG_ON(ret);
+#else
+        unsigned int i;
+        int ret;
+        ret = memblock_remove(MSM_ION_MM_BASE, MSM_ION_MM_SIZE);
+        BUG_ON(ret);
 
 	for (i = 0; i < ion_pdata.nr; ++i) {
 		struct ion_platform_heap *heap = &(ion_pdata.heaps[i]);
@@ -1836,6 +1870,7 @@ static void __init reserve_ion_memory(void)
 			}
 		}
 	}
+#endif
 #endif
 }
 
@@ -1867,8 +1902,19 @@ static void __init pyramid_early_memory(void)
 
 static void __init pyramid_reserve(void)
 {
+	unsigned int cma_total_size = 0;
 	msm_reserve();
+
+#ifdef CONFIG_CMA
+	cma_total_size += MSM_ION_SF_SIZE;
+	dma_declare_contiguous(
+			&ion_cma_heap_device.dev,
+			cma_total_size,
+			0,
+			0);
+#endif
 }
+
 
 #ifdef CONFIG_MSM8X60_AUDIO
 static uint32_t msm_spi_gpio[] = {
