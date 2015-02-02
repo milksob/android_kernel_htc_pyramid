@@ -1902,14 +1902,12 @@ static void __init pyramid_early_memory(void)
 
 static void __init pyramid_reserve(void)
 {
-	unsigned int cma_total_size = 0;
 	msm_reserve();
 
 #ifdef CONFIG_CMA
-	cma_total_size += MSM_ION_SF_SIZE;
 	dma_declare_contiguous(
 			&ion_cma_heap_device.dev,
-			cma_total_size,
+			MSM_ION_SF_SIZE,
 			0,
 			0);
 #endif
