@@ -1153,7 +1153,7 @@ static int __init msm_mpdec_init(void) {
 				boost_freq = msm_mpdec_tuners_ins.boost_freq[cpu];
 				break;
 			default:
-				boost_freq = msm_mpdec_tuners_ins.boost_freq[3];
+				boost_freq = msm_mpdec_tuners_ins.boost_freq[1];
 				break;
 		}
 		per_cpu(msm_mpdec_cpudata, cpu).boost_freq = boost_freq;
