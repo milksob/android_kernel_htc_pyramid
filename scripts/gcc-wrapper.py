@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 # Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
@@ -43,7 +43,7 @@ allowed_warnings = set([
     "alignment.c:327",
     "mmu.c:602",
     "return_address.c:62",
-	"swab.h:49",
+    "swab.h:49",
    "SemaLambda.cpp:946",
    "CGObjCGNU.cpp:1414",
    "BugReporter.h:146",
