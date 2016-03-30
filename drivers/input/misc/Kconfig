@@ -779,4 +779,3 @@ config INPUT_ISL29023
 	  will be called isl29023.
 
 source "drivers/input/misc/mpu3050/Kconfig"
-
